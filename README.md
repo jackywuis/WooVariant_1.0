@@ -8,6 +8,6 @@ Notice that DNA sequence should be the complete operon for the amino acid sequen
 
 Python packages "argparse" and "pysam" will be needed. The usage of this program is as following:
 
-python WooVariant_1_0.py -i file/file.bam -d file/dna.fasta -a file/aa.fna -o file/file.csv
+python WooVariant_1_0.py -i file/file.bam -d file/dna.fasta -a file/aa.fna -o file/name
 
-The output format is csv in which both nucleotide and amino acid changes are reported.
+The output format is csv in which both nucleotide and amino acid changes are reported. Two tables in csv format would also be reported, including one with nucleotide changes and their percentages in each position, the other with amino acid changes.
