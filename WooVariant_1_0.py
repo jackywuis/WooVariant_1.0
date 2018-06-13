@@ -29,7 +29,7 @@ for count, infile in enumerate(args.dna, args.aa):
         if '>' not in line:
             template[count] += line.split('\n')[0]
     infh.close()
-if len(template[0]) / 3 != len(template[1]):
+if (len(template[0]) / 3 != len(template[1])) or (len(template[0]) % 3 != 0):
     print 'NOTICE! Your input gene DNA is not matched with your input of amino acid residue'
 output_file = args.output_file + '.vcf'
 dna_file = args.output_file + '_DNA.csv'
@@ -47,54 +47,69 @@ aafh = open(aa_file, 'w')
 aafh.write('Pos\tRef\t' + '\t'.join(keys))
 for line in samfile.text.split('\n'):
     if 'SQ' in line:
-        output = []
-        count = 0
-        codon = ''
-        new_codon = [{'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0}, {'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0},
-                     {'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0}]
-        for row in samfile.pileup(line.split('\t')[1].split(':')[1], 0, int(line.split('\t')[2].split(':')[
-                1]), max_depth=2500000):
-            codon += template[0][row.pos]
-            counter = {}
-            for read in row.pileups:
-                if read.indel == 0 and read.query_position is not None:
-                    if read.alignment.query_sequence[read.query_position] in ['A', 'C', 'G', 'T']:
-                        position = read.alignment.query_sequence[read.query_position]
-                        new_codon[count][position] += 1
-                        if read.alignment.query_sequence[read.query_position] != template[0][row.pos]:
-                            if position not in counter:
-                                counter.update({position: 0})
-                            counter[position] += 1
-            for item in new_codon[count]:
-                new_codon[count][item] = float(new_codon[count][item]) / float(row.n)
-            if counter != {}:
-                for item in counter:
-                    outfh.write(line.split('\t')[1].split(':')[1] + '\t' + str(row.pos + 1) + '\t.\t' +
-                                template[0][row.pos] + '\t' + item + '\t.\tPASS\tIS=' + str(counter[item]) + ';DP=' +
-                                str(row.n) + ';AF=%.4f' % (float(counter[item]) / float(row.n)) + '\n')
-            dnafh.write('\n' + str(row.pos + 1) + '\t' + template[0][row.pos])
-            for item in ['A', 'C', 'G', 'T']:
-                dnafh.write('\t')
-                if item != template[0][row.pos] and item in counter:
-                    dnafh.write(str(float(counter[item]) / float(row.n)))
-            count += 1
-            if count == 3:
-                output_dict = {}
+        for count, row in enumerate(samfile.pileup(line.split('\t')[1].split(':')[1], 0, int(line.split('\t')[2].split(':')[
+                1]), max_depth=2500000)):
+            dna_counter = {}
+            if count % 3 == 0:
+                total = 0
+                aa_counter = {}
+                for read in row.pileups:
+                    if read.indel == 0 and read.query_position:
+                        if (read.alignment.query_sequence[read.query_position:(read.query_position + 3)] in codons) and (
+                                read.query_position <= (len(read)-3)):
+                            aa_position = read.alignment.query_sequence[read.query_position:(read.query_position + 3)]
+                            if aa_position != template[0][row.pos: (row.pos + 3)]:
+                                if codons[aa_position] not in aa_counter:
+                                    aa_counter.update({codons[aa_position]: 0})
+                                aa_counter[codons[aa_position]] += 1
+                            total += 1
+                        if read.alignment.query_sequence[read.query_position] in ['A', 'C', 'G', 'T']:
+                            dna_position = read.alignment.query_sequence[read.query_position]
+                            if dna_position != template[0][row.pos]:
+                                if dna_position not in dna_counter:
+                                    dna_counter.update({dna_position: 0})
+                            dna_counter[dna_position] += 1
+                aafh.write('\n' + str(count / 3 + 1) + '\t' + template[1][count / 3])
                 for item in keys:
-                    output_dict.update({item: 0.0})
-                for item in codons:
-                    if item != codon:
-                        output_dict[codons[item]] += new_codon[0][item[0]] * new_codon[1][item[1]] * new_codon[2][
-                            item[2]]
-                output += [output_dict]
-                count = 0
-                codon = ''
-                new_codon = [{'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0}, {'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0},
-                             {'A': 0.0, 'C': 0.0, 'G': 0.0, 'T': 0.0}]
-        count = 0
-        for item in output:
-            aafh.write('\n' + str(count + 1) + '\t' + template[1][count] + '\t'.join([item[x] for x in keys]))
-            count += 1
+                    aafh.write('\t')
+                    if item in aa_counter:
+                        aafh.write(str(float(aa_counter[item]) / float(total)))
+                    else:
+                        aafh.write('0')
+                if dna_counter != {}:
+                    for item in dna_counter:
+                        outfh.write('T7RNAP\t' + str(row.pos + 1) + '\t.\t' + template[0][row.pos] + '\t' + item +
+                            '\t.\tPASS\tIS=' + str(dna_counter[item]) + ';DP=' + str(row.n) + ';AF=%.4f' % (
+                                    float(dna_counter[item]) / float(row.n)) + '\n')
+                dnafh.write('\n' + str(row.pos + 1) + '\t' + template[0][row.pos])
+                for item in ['A', 'C', 'G', 'T']:
+                    dnafh.write('\t')
+                    if item != template[0][row.pos] and item in dna_counter:
+                        dnafh.write(str(float(dna_counter[item]) / float(row.n)))
+                    else:
+                        dnafh.write('0')
+            else:
+            # Following codes are the same as previous ones for nucleotide outputs
+                for read in row.pileups:
+                    if read.indel == 0 and read.query_position:
+                        if read.alignment.query_sequence[read.query_position] in ['A', 'C', 'G', 'T']:
+                            dna_position = read.alignment.query_sequence[read.query_position]
+                            if dna_position != template[0][row.pos]:
+                                if dna_position not in dna_counter:
+                                    dna_counter.update({dna_position: 0})
+                                dna_counter[dna_position] += 1
+                if dna_counter != {}:
+                    for item in dna_counter:
+                        outfh.write('T7RNAP\t' + str(row.pos + 1) + '\t.\t' + template[0][row.pos] + '\t' + item +
+                            '\t.\tPASS\tIS=' + str(dna_counter[item]) + ';DP=' + str(row.n) + ';AF=%.4f' % (
+                                    float(dna_counter[item]) / float(row.n)) + '\n')
+                dnafh.write('\n' + str(row.pos + 1) + '\t' + template[0][row.pos])
+                for item in ['A', 'C', 'G', 'T']:
+                    dnafh.write('\t')
+                    if item != template[0][row.pos] and item in dna_counter:
+                        dnafh.write(str(float(dna_counter[item]) / float(row.n)))
+                    else:
+                        dnafh.write('0')
 samfile.close()
 outfh.close()
 dnafh.close()
